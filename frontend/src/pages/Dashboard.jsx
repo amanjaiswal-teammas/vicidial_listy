@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 
 export default function Dashboard({ username, onLogout }) {
   const today = new Date().toISOString().split("T")[0];
+  const [date, setDate] = useState(today);
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
   const [rows, setRows] = useState([]);
@@ -18,7 +19,7 @@ export default function Dashboard({ username, onLogout }) {
     setError("");
     try {
       const res = await fetch(
-        `http://localhost:8000/api/list?from_date=${fromDate}&to_date=${toDate}`,
+        `http://localhost:8000/api/list?date=${date}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.status === 401) { onLogout(); return; }
@@ -38,7 +39,7 @@ export default function Dashboard({ username, onLogout }) {
     setExporting(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/api/list/export?from_date=${fromDate}&to_date=${toDate}`,
+        `http://localhost:8000/api/list/export?date=${date}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error("Export failed");
@@ -46,7 +47,7 @@ export default function Dashboard({ username, onLogout }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `vicidial_list_${fromDate}_to_${toDate}.xlsx`;
+      a.download = `vicidial_list_${date}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -107,12 +108,12 @@ export default function Dashboard({ username, onLogout }) {
         {/* Filter Bar */}
         <div className="filter-bar">
           <div className="filter-group">
-            <label>From Date</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
-          </div>
-          <div className="filter-group">
-            <label>To Date</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
+              <label>Select Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+              />
           </div>
           <button className="btn-search" onClick={fetchData} disabled={loading}>
             {loading

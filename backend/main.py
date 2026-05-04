@@ -68,7 +68,7 @@ def login(data: LoginRequest):
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.get("/api/list")
-def get_list_data(from_date: str, to_date: str, payload=Depends(verify_token)):
+def get_list_data(date: str, payload=Depends(verify_token)):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
@@ -76,10 +76,10 @@ def get_list_data(from_date: str, to_date: str, payload=Depends(verify_token)):
                 SELECT entry_date, source_id 
                 FROM vicidial_list 
                 WHERE list_id='33331' 
-                AND DATE(entry_date) BETWEEN %s AND %s 
+                AND DATE(entry_date) = %s
                 ORDER BY entry_date DESC
             """
-            cursor.execute(query, (from_date, to_date))
+            cursor.execute(query, (date,))
             rows = cursor.fetchall()
         conn.close()
         return {"data": rows, "total": len(rows)}
@@ -87,7 +87,7 @@ def get_list_data(from_date: str, to_date: str, payload=Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/list/export")
-def export_list_data(from_date: str, to_date: str, payload=Depends(verify_token)):
+def export_list_data(date: str, payload=Depends(verify_token)):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
@@ -95,10 +95,10 @@ def export_list_data(from_date: str, to_date: str, payload=Depends(verify_token)
                 SELECT entry_date, source_id 
                 FROM vicidial_list 
                 WHERE list_id='33331' 
-                AND DATE(entry_date) BETWEEN %s AND %s 
+                AND DATE(entry_date) = %s
                 ORDER BY entry_date DESC
             """
-            cursor.execute(query, (from_date, to_date))
+            cursor.execute(query, (date,))
             rows = cursor.fetchall()
         conn.close()
 
@@ -111,7 +111,7 @@ def export_list_data(from_date: str, to_date: str, payload=Depends(verify_token)
             df.to_excel(writer, index=False, sheet_name="VicidialList")
         output.seek(0)
 
-        filename = f"vicidial_list_{from_date}_to_{to_date}.xlsx"
+        filename = f"vicidial_list_{date}.xlsx"
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

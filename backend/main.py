@@ -25,8 +25,20 @@ SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"
 
 # Hardcoded credentials
+# Hardcoded users with roles
 USERS = {
-    "admin": "admin123"
+    "admin": {
+        "password": "admin123",
+        "role": "admin"
+    },
+    "finnable": {
+        "password": "finnable123",
+        "role": "finnable"
+    },
+    "gnc": {
+        "password": "gnc123",
+        "role": "gnc"
+    }
 }
 
 # DB config
@@ -88,17 +100,48 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 
 @app.post("/api/login")
 def login(data: LoginRequest):
-    if data.username in USERS and USERS[data.username] == data.password:
+
+    user = USERS.get(data.username)
+
+    if user and user["password"] == data.password:
+
         token = jwt.encode(
-            {"sub": data.username, "exp": datetime.utcnow().timestamp() + 86400},
+            {
+                "sub": data.username,
+                "role": user["role"],
+                "exp": datetime.utcnow().timestamp() + 86400
+            },
             SECRET_KEY,
             algorithm=ALGORITHM
         )
-        return {"token": token, "username": data.username}
+
+        return {
+            "token": token,
+            "username": data.username,
+            "role": user["role"]
+        }
+
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
+
+def require_roles(allowed_roles: list):
+    def checker(payload=Depends(verify_token)):
+
+        user_role = payload.get("role")
+
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied"
+            )
+
+        return payload
+
+    return checker
+
+
 @app.get("/api/list")
-def get_list_data(date: str, payload=Depends(verify_token)):
+def get_list_data(date: str, payload=Depends(require_roles(["admin", "finnable"]))):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
@@ -117,7 +160,7 @@ def get_list_data(date: str, payload=Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/list/export")
-def export_list_data(date: str, payload=Depends(verify_token)):
+def export_list_data(date: str, payload=Depends(require_roles(["admin", "finnable"]))):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
@@ -152,7 +195,7 @@ def export_list_data(date: str, payload=Depends(verify_token)):
 
 
 @app.post("/api/db-credentials", status_code=201)
-def create_credential(data: DBCredentialCreate, payload=Depends(verify_token)):
+def create_credential(data: DBCredentialCreate, payload=Depends(require_roles(["admin", "gnc"]))):
     """Create a new DB credential entry."""
     try:
         conn = get_cs_connection()
@@ -177,7 +220,7 @@ def create_credential(data: DBCredentialCreate, payload=Depends(verify_token)):
 
 
 @app.get("/api/db-credentials")
-def list_credentials(payload=Depends(verify_token)):
+def list_credentials(payload=Depends(require_roles(["admin", "gnc"]))):
     """Get all DB credential entries (passwords masked)."""
     try:
         conn = get_cs_connection()
@@ -193,7 +236,7 @@ def list_credentials(payload=Depends(verify_token)):
 
 
 @app.get("/api/db-credentials/{credential_id}")
-def get_credential(credential_id: int, payload=Depends(verify_token)):
+def get_credential(credential_id: int, payload=Depends(require_roles(["admin", "gnc"]))):
     """Get a single DB credential by ID (password masked)."""
     try:
         conn = get_cs_connection()
@@ -214,7 +257,7 @@ def get_credential(credential_id: int, payload=Depends(verify_token)):
 
 
 @app.put("/api/db-credentials/{credential_id}")
-def update_credential(credential_id: int, data: DBCredentialUpdate, payload=Depends(verify_token)):
+def update_credential(credential_id: int, data: DBCredentialUpdate, payload=Depends(require_roles(["admin", "gnc"]))):
     """Update one or more fields of a DB credential."""
     try:
         conn = get_cs_connection()
@@ -281,7 +324,7 @@ def dynamic_report(
     credential_id: int,
     start_date: str,
     end_date: str,
-    payload=Depends(verify_token)
+    payload=Depends(require_roles(["admin", "gnc"]))
 ):
     try:
         conn = get_dynamic_connection(credential_id)
@@ -364,7 +407,7 @@ def export_dynamic_report(
     credential_id: int,
     start_date: str,
     end_date: str,
-    payload=Depends(verify_token)
+    payload=Depends(require_roles(["admin", "gnc"]))
 ):
     try:
         conn = get_dynamic_connection(credential_id)

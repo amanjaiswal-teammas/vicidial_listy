@@ -20,6 +20,7 @@ export default function Login({ onLogin }) {
       if (!res.ok) throw new Error(data.detail || "Login failed");
       localStorage.setItem("token", data.token);
       localStorage.setItem("username", data.username);
+      localStorage.setItem("role", data.role);
       onLogin(data.username);
     } catch (err) {
       setError(err.message);
@@ -72,9 +73,9 @@ export default function Login({ onLogin }) {
           </button>
         </form>
 
-        <div className="login-hint">
-          Default: <strong>admin</strong> / <strong>admin123</strong>
-        </div>
+{/*         <div className="login-hint"> */}
+{/*           Default: <strong>admin</strong> / <strong>admin123</strong> */}
+{/*         </div> */}
       </div>
     </div>
   );

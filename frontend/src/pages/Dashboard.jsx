@@ -370,6 +370,7 @@ export default function Dashboard({ username, onLogout }) {
   const [searched, setSearched] = useState(false);
 
   const token = localStorage.getItem("token");
+  const role = localStorage.getItem("role");
 
   const fetchData = async () => {
     setLoading(true);
@@ -436,6 +437,7 @@ export default function Dashboard({ username, onLogout }) {
         </div>
         <nav className="sidebar-nav">
           <div className="nav-section">REPORTS</div>
+          {(role === "admin" || role === "gnc") && (
           <a href="#" className={`nav-item ${activeTab === "credentials" ? "active" : ""}`}
                onClick={(e) => { e.preventDefault(); setActiveTab("credentials"); }}
             >
@@ -446,14 +448,18 @@ export default function Dashboard({ username, onLogout }) {
               </svg>
               DB Credentials
           </a>
+          )}
 
+          {(role === "admin" || role === "finnable") && (
           <a href="#" className={`nav-item ${activeTab === "list" ? "active" : ""}`}
               onClick={(e) => { e.preventDefault(); setActiveTab("list"); }}
             >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
             List
           </a>
+          )}
 
+          {(role === "admin" || role === "gnc") && (
           <a
               href="#"
               className={`nav-item ${activeTab === "dynamic" ? "active" : ""}`}
@@ -466,6 +472,7 @@ export default function Dashboard({ username, onLogout }) {
               </svg>
               Dynamic Report
           </a>
+          )}
 
         </nav>
         <div className="sidebar-user">

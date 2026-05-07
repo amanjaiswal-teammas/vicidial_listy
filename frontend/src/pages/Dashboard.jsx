@@ -1,8 +1,365 @@
 import { useState, useEffect } from "react";
 
+function DBCredentials({ token }) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [form, setForm] = useState({
+    host: "",
+    host_name: "",
+    user: "",
+    password: "",
+    database_name: ""
+  });
+
+  const [editingId, setEditingId] = useState(null);
+
+  const fetchCredentials = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("http://localhost:8000/api/db-credentials", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail);
+      setData(json.data || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCredentials();
+  }, []);
+
+  const handleSubmit = async () => {
+    try {
+      const url = editingId
+        ? `http://localhost:8000/api/db-credentials/${editingId}`
+        : `http://localhost:8000/api/db-credentials`;
+
+      const method = editingId ? "PUT" : "POST";
+
+      const payload = { ...form };
+
+      // 🚀 IMPORTANT: don't send empty password on update
+      if (editingId && !payload.password) {
+        delete payload.password;
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail);
+
+      setForm({
+        host: "",
+        host_name: "",
+        user: "",
+        password: "",
+        database_name: ""
+      });
+      setEditingId(null);
+      fetchCredentials();
+
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleEdit = (item) => {
+    setForm({
+      host: item.host,
+      host_name: item.host_name,
+      user: item.user,
+      password: "",
+      database_name: item.database_name
+    });
+    setEditingId(item.id);
+  };
+
+  return (
+    <div>
+      <h2>DB Credentials</h2>
+
+      {error && <div className="dash-error">{error}</div>}
+
+      {/* Form */}
+      <div className="form">
+        <input placeholder="Host IP" value={form.host}
+          onChange={e => setForm({ ...form, host: e.target.value })} />
+
+        <input placeholder="Host Name" value={form.host_name}
+          onChange={e => setForm({ ...form, host_name: e.target.value })} />
+
+        <input placeholder="User" value={form.user}
+          onChange={e => setForm({ ...form, user: e.target.value })} />
+
+        <input placeholder="Password"
+          type="password"
+          value={form.password}
+          onChange={e => setForm({ ...form, password: e.target.value })} />
+
+        <input placeholder="Database Name" value={form.database_name}
+          onChange={e => setForm({ ...form, database_name: e.target.value })} />
+
+        <button onClick={handleSubmit}>
+          {editingId ? "Update" : "Create"}
+        </button>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Host IP</th>
+              <th>Host Name</th>
+              <th>User</th>
+              <th>Database</th>
+              <th>Created</th>
+              <th>Updated</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map(item => (
+              <tr key={item.id}>
+                <td>{item.id}</td>
+                <td>{item.host}</td>
+                <td>{item.host_name}</td>
+                <td>{item.user}</td>
+                <td>{item.database_name}</td>
+                <td>{new Date(item.created_at).toLocaleString()}</td>
+                <td>{new Date(item.updated_at).toLocaleString()}</td>
+                <td>
+                  <button onClick={() => handleEdit(item)}>Edit</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+
+
+function DynamicReport({ token, onLogout }) {
+  const today = new Date().toISOString().split("T")[0];
+  const [exporting, setExporting] = useState(false);
+
+  const [credentials, setCredentials] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Fetch DB credentials for dropdown
+  useEffect(() => {
+    fetch("http://localhost:8000/api/db-credentials", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => setCredentials(data.data || []))
+      .catch(() => setCredentials([]));
+  }, []);
+
+  const fetchReport = async () => {
+    if (!selectedId) {
+      setError("Please select a DB");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch(
+        `http://localhost:8000/api/dynamic-report?credential_id=${selectedId}&start_date=${startDate}&end_date=${endDate}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (res.status === 401) {
+        onLogout();
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail);
+
+      setRows(data.data || []);
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDynamicExport = async () => {
+      if (!selectedId) {
+        setError("Please select a DB");
+        return;
+      }
+
+      setExporting(true);
+
+      try {
+        const res = await fetch(
+          `http://localhost:8000/api/dynamic-report/export?credential_id=${selectedId}&start_date=${startDate}&end_date=${endDate}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        if (!res.ok) throw new Error("Export failed");
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `dynamic_report_${startDate}_${endDate}.xlsx`;
+        a.click();
+
+        window.URL.revokeObjectURL(url);
+
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setExporting(false);
+      }
+  };
+
+  return (
+    <div>
+      <h2>Dynamic Report</h2>
+
+      {error && <div className="dash-error">{error}</div>}
+
+      {/* Filters */}
+      <div className="filter-bar">
+        <div className="filter-group">
+          <label>Select DB</label>
+          <select value={selectedId} onChange={e => setSelectedId(e.target.value)}>
+            <option value="">-- Select Database --</option>
+            {credentials.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.host_name} ({c.database_name})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-group">
+          <label>Start Date</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </div>
+
+        <div className="filter-group">
+          <label>End Date</label>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </div>
+
+        <button className="btn-search" onClick={fetchReport} disabled={loading}>
+          {loading ? "Loading..." : "Search"}
+        </button>
+
+        <button
+          className="btn-export"
+          onClick={handleDynamicExport}
+          disabled={exporting}
+        >
+          {exporting ? "Exporting..." : "Export Excel"}
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="table-wrap" style={{ overflowX: "auto" }}>
+        {loading ? (
+          <p>Loading...</p>
+        ) : rows.length === 0 ? (
+          <p>No data found</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Call Date</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Agent</th>
+                <th>Campaign</th>
+                <th>Phone</th>
+                <th>Status</th>
+                <th>Term Reason</th>
+                <th>Call Duration</th>
+                <th>Queue Time</th>
+                <th>Parked Time</th>
+                <th>Dispo Sec</th>
+                <th>Wrap Time</th>
+                <th>Call ≤20s</th>
+                <th>Transfer Status</th>
+                <th>Feedback</th>
+                <th>Transfer Time</th>
+                <th>Transfer End</th>
+                <th>CSAT IVR Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td>{i + 1}</td>
+                  <td>{r.CallDate}</td>
+                  <td>{r.StartTime}</td>
+                  <td>{r.Endtime}</td>
+                  <td>{r.Agent}</td>
+                  <td>{r.campaign_id}</td>
+                  <td>{r.PhoneNumber}</td>
+                  <td>{r.status}</td>
+                  <td>{r.term_reason}</td>
+                  <td>{r.CallDuration}</td>
+                  <td>{r.Queuetime}</td>
+                  <td>{r.ParkedTime}</td>
+                  <td>{r.dispo_sec ?? 0}</td>
+                  <td>{r.WrapTime}</td>
+                  <td>{r.Call20}</td>
+                  <td>{r.CallTransferStatus}</td>
+                  <td>{r.FeedbackOption}</td>
+                  <td>{r.CallTransferTime}</td>
+                  <td>{r.CallTransferEndTime}</td>
+                  <td>{r.CSATIVRDuration}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 export default function Dashboard({ username, onLogout }) {
   const today = new Date().toISOString().split("T")[0];
   const [date, setDate] = useState(today);
+  const [activeTab, setActiveTab] = useState("list");
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
   const [rows, setRows] = useState([]);
@@ -79,10 +436,37 @@ export default function Dashboard({ username, onLogout }) {
         </div>
         <nav className="sidebar-nav">
           <div className="nav-section">REPORTS</div>
-          <a href="#" className="nav-item active">
+          <a href="#" className={`nav-item ${activeTab === "credentials" ? "active" : ""}`}
+               onClick={(e) => { e.preventDefault(); setActiveTab("credentials"); }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                <path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                <path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6"/>
+              </svg>
+              DB Credentials
+          </a>
+
+          <a href="#" className={`nav-item ${activeTab === "list" ? "active" : ""}`}
+              onClick={(e) => { e.preventDefault(); setActiveTab("list"); }}
+            >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
             List
           </a>
+
+          <a
+              href="#"
+              className={`nav-item ${activeTab === "dynamic" ? "active" : ""}`}
+              onClick={(e) => { e.preventDefault(); setActiveTab("dynamic"); }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2">
+                <path d="M3 3v18h18"/>
+                <path d="M7 14l3-3 3 3 5-5"/>
+              </svg>
+              Dynamic Report
+          </a>
+
         </nav>
         <div className="sidebar-user">
           <div className="user-avatar">{username[0].toUpperCase()}</div>
@@ -98,82 +482,98 @@ export default function Dashboard({ username, onLogout }) {
 
       {/* Main */}
       <main className="dash-main">
-        <header className="dash-header">
-          <div>
-            <h2>Vicidial List</h2>
-            <p>list_id: 33331 — entry records with date filter</p>
-          </div>
-        </header>
-
-        {/* Filter Bar */}
-        <div className="filter-bar">
-          <div className="filter-group">
-              <label>Select Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={e => setDate(e.target.value)}
-              />
-          </div>
-          <button className="btn-search" onClick={fetchData} disabled={loading}>
-            {loading
-              ? <><span className="spinner sm" /> Searching...</>
-              : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>
-            }
-          </button>
-          {searched && rows.length > 0 && (
-            <button className="btn-export" onClick={handleExport} disabled={exporting}>
-              {exporting
-                ? <><span className="spinner sm white" /> Exporting...</>
-                : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export Excel</>
-              }
-            </button>
-          )}
-        </div>
-
-        {error && <div className="dash-error">{error}</div>}
-
-        {/* Table */}
-        <div className="table-wrap">
-          {!searched ? (
-            <div className="empty-state">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-              <p>Select a date range and click <strong>Search</strong> to load data</p>
-            </div>
-          ) : loading ? (
-            <div className="empty-state"><span className="spinner lg" /></div>
-          ) : rows.length === 0 ? (
-            <div className="empty-state">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <p>No records found for the selected date range.</p>
-            </div>
-          ) : (
+          {activeTab === "list" && (
             <>
-              <div className="table-meta">
-                <span>{total} records found</span>
-              </div>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Entry Date</th>
-                    <th>Source ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, i) => (
-                    <tr key={i}>
-                      <td className="row-num">{i + 1}</td>
-                      <td>{formatDate(row.entry_date)}</td>
-                      <td><span className="source-badge">{row.source_id || "—"}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <header className="dash-header">
+                  <div>
+                    <h2>Vicidial List</h2>
+                    <p>list_id: 33331 — entry records with date filter</p>
+                  </div>
+                </header>
+
+                {/* Filter Bar */}
+                <div className="filter-bar">
+                  <div className="filter-group">
+                      <label>Select Date</label>
+                      <input
+                        type="date"
+                        value={date}
+                        onChange={e => setDate(e.target.value)}
+                      />
+                  </div>
+                  <button className="btn-search" onClick={fetchData} disabled={loading}>
+                    {loading
+                      ? <><span className="spinner sm" /> Searching...</>
+                      : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>
+                    }
+                  </button>
+                  {searched && rows.length > 0 && (
+                    <button className="btn-export" onClick={handleExport} disabled={exporting}>
+                      {exporting
+                        ? <><span className="spinner sm white" /> Exporting...</>
+                        : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export Excel</>
+                      }
+                    </button>
+                  )}
+                </div>
+
+                {error && <div className="dash-error">{error}</div>}
+
+                {/* Table */}
+                <div className="table-wrap">
+                  {!searched ? (
+                    <div className="empty-state">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                      <p>Select a date range and click <strong>Search</strong> to load data</p>
+                    </div>
+                  ) : loading ? (
+                    <div className="empty-state"><span className="spinner lg" /></div>
+                  ) : rows.length === 0 ? (
+                    <div className="empty-state">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      <p>No records found for the selected date range.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="table-meta">
+                        <span>{total} records found</span>
+                      </div>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>List ID</th>
+                            <th>Entry Date</th>
+                            <th>Source ID</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => (
+                            <tr key={i}>
+                              <td className="row-num">{i + 1}</td>
+                              <td>{row.list_id}</td>
+                              <td>{formatDate(row.entry_date)}</td>
+                              <td><span className="source-badge">{row.source_id || "—"}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
+                </div>
             </>
           )}
-        </div>
+
+          {activeTab === "credentials" && (
+            <DBCredentials token={token} />
+          )}
+
+          {activeTab === "dynamic" && (
+              <DynamicReport token={token} onLogout={onLogout} />
+          )}
+
       </main>
+
     </div>
   );
 }

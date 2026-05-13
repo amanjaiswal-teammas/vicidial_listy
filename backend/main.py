@@ -148,7 +148,7 @@ def get_list_data(date: str, payload=Depends(require_roles(["admin", "finnable"]
             query = """
                 SELECT list_id, entry_date, source_id 
                 FROM vicidial_list 
-                WHERE list_id IN ('33331', '33332', '33333')
+                WHERE list_id IN ('33331', '33332', '33333', '33334')
                 AND DATE(entry_date) = %s
                 ORDER BY entry_date DESC
             """
@@ -167,7 +167,7 @@ def export_list_data(date: str, payload=Depends(require_roles(["admin", "finnabl
             query = """
                 SELECT list_id, entry_date, source_id 
                 FROM vicidial_list 
-                WHERE list_id IN ('33331', '33332', '33333')
+                WHERE list_id IN ('33331', '33332', '33333', '33334')
                 AND DATE(entry_date) = %s
                 ORDER BY entry_date DESC
             """

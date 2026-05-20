@@ -369,6 +369,10 @@ export default function Dashboard({ username, onLogout }) {
   const [error, setError] = useState("");
   const [searched, setSearched] = useState(false);
 
+  const [sourceId, setSourceId] = useState("");
+  const [sourceRows, setSourceRows] = useState([]);
+  const [sourceLoading, setSourceLoading] = useState(false);
+
   const token = localStorage.getItem("token");
   const role = localStorage.getItem("role");
 
@@ -391,6 +395,48 @@ export default function Dashboard({ username, onLogout }) {
     } finally {
       setLoading(false);
     }
+  };
+
+
+  const fetchSourceDetails = async () => {
+
+      if (!sourceId) {
+        setError("Please enter FN ID");
+        return;
+      }
+
+      setSourceLoading(true);
+      setError("");
+
+      try {
+
+        const res = await fetch(
+          `http://localhost:8000/api/source-details?source_id=${sourceId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        );
+
+        if (res.status === 401) {
+          onLogout();
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail);
+        }
+
+        setSourceRows(data.data || []);
+
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setSourceLoading(false);
+      }
   };
 
   const handleExport = async () => {
@@ -472,6 +518,31 @@ export default function Dashboard({ username, onLogout }) {
               </svg>
               Dynamic Report
           </a>
+          )}
+
+          {(role === "admin" || role === "finnable") && (
+              <a
+                href="#"
+                className={`nav-item ${activeTab === "source-search" ? "active" : ""}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveTab("source-search");
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8"/>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+
+                FN ID Search
+              </a>
           )}
 
         </nav>
@@ -570,6 +641,86 @@ export default function Dashboard({ username, onLogout }) {
                 </div>
             </>
           )}
+
+          {activeTab === "source-search" && (
+              <>
+                <header className="dash-header">
+                  <div>
+                    <h2>FN ID Search</h2>
+                    <p>Search vicidial records using FN ID</p>
+                  </div>
+                </header>
+
+                {error && <div className="dash-error">{error}</div>}
+
+                <div className="filter-bar">
+
+                  <div className="filter-group">
+                    <label>Enter FN ID</label>
+
+                    <input
+                      type="text"
+                      value={sourceId}
+                      onChange={(e) => setSourceId(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    className="btn-search"
+                    onClick={fetchSourceDetails}
+                    disabled={sourceLoading}
+                  >
+                    {sourceLoading ? "Searching..." : "Search"}
+                  </button>
+
+                </div>
+
+                <div className="table-wrap">
+
+                  {sourceLoading ? (
+                    <div className="empty-state">
+                      <span className="spinner lg" />
+                    </div>
+                  ) : sourceRows.length === 0 ? (
+                    <div className="empty-state">
+                      <p>No source records found</p>
+                    </div>
+                  ) : (
+
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Lead Entry Date</th>
+                          <th>Dispo Code</th>
+                          <th>FN ID</th>
+                          <th>List ID</th>
+                          <th>Called Count</th>
+                          <th>Last Call Time</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {sourceRows.map((row, i) => (
+                          <tr key={i}>
+                            <td>{i + 1}</td>
+                            <td>{formatDate(row.entry_date)}</td>
+                            <td>{row.status}</td>
+                            <td>{row.source_id}</td>
+                            <td>{row.list_id}</td>
+                            <td>{row.called_count}</td>
+                            <td>{formatDate(row.modify_date)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                  )}
+
+                </div>
+              </>
+          )}
+
 
           {activeTab === "credentials" && (
             <DBCredentials token={token} />

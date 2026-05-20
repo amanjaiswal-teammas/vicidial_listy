@@ -194,6 +194,45 @@ def export_list_data(date: str, payload=Depends(require_roles(["admin", "finnabl
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.get("/api/source-details")
+def get_source_details(
+    source_id: str,
+    payload=Depends(require_roles(["admin", "finnable"]))
+):
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor() as cursor:
+            query = """
+                SELECT 
+                    entry_date,
+                    status,
+                    source_id,
+                    list_id,
+                    called_count,
+                    modify_date
+                FROM vicidial_list
+                WHERE source_id = %s
+                ORDER BY entry_date DESC
+            """
+
+            cursor.execute(query, (source_id,))
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        return {
+            "source_id": source_id,
+            "total": len(rows),
+            "data": rows
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @app.post("/api/db-credentials", status_code=201)
 def create_credential(data: DBCredentialCreate, payload=Depends(require_roles(["admin", "gnc"]))):
     """Create a new DB credential entry."""

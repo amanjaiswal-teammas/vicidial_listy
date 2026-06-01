@@ -38,6 +38,10 @@ USERS = {
     "gnc": {
         "password": "gnc123",
         "role": "gnc"
+    },
+    "neemans": {
+        "password": "neemans123",
+        "role": "neemans"
     }
 }
 
@@ -211,7 +215,7 @@ def get_source_details(
                     source_id,
                     list_id,
                     called_count,
-                    modify_date
+                    last_local_call_time
                 FROM vicidial_list
                 WHERE source_id = %s
                 ORDER BY entry_date DESC
@@ -544,6 +548,434 @@ def export_dynamic_report(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
                 "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+@app.get("/api/neemans-apr")
+def neemans_apr(
+    start_date: str,
+    end_date: str,
+    payload=Depends(require_roles(["admin", "neemans"]))
+):
+    try:
+        conn = get_dynamic_connection(5)
+
+        with conn.cursor() as cursor:
+            query = """
+            SELECT
+                t2.uniqueid,
+                DATE(t2.call_date) AS CallDate,
+                FROM_UNIXTIME(t2.start_epoch) AS StartTime,
+                REPLACE(FROM_UNIXTIME(t2.start_epoch+queue_seconds),'.00','') AS CallTime,
+                SEC_TO_TIME(t2.length_in_sec-queue_seconds) AS CallDuration1,
+                t2.user AS Agent,
+                t2.campaign_id,
+                t1.caller_code AS PhoneNumber,
+                t2.status,
+                t2.term_reason,
+                SEC_TO_TIME(t2.length_in_sec) AS CallDuration,
+                SEC_TO_TIME(queue_seconds) AS Queuetime,
+                SEC_TO_TIME(IFNULL(t6.p,0)) AS ParkedTime,
+                t3.dispo_sec,
+                IF(
+                    t3.dispo_sec IS NULL,
+                    SEC_TO_TIME(0),
+                    IF(
+                        t3.sub_status='LOGIN'
+                        OR t3.sub_status='Feed'
+                        OR t3.talk_sec=t3.dispo_sec
+                        OR t3.talk_sec=0,
+                        SEC_TO_TIME(1),
+                        IF(
+                            t3.dispo_sec>100,
+                            SEC_TO_TIME(
+                                t3.dispo_sec-(t3.dispo_sec/100)*100
+                            ),
+                            SEC_TO_TIME(t3.dispo_sec)
+                        )
+                    )
+                ) AS WrapTime,
+                IF(queue_seconds<=30,1,0) AS Call20,
+                FROM_UNIXTIME(t2.end_epoch) AS Endtime
+
+            FROM (
+                SELECT t6.*
+                FROM vicidial_closer_log t6
+                JOIN (
+                    SELECT
+                        uniqueid,
+                        MAX(closecallid) AS max_closecallid
+                    FROM vicidial_closer_log
+                    WHERE campaign_id IN ('Neemans_IB')
+                    AND DATE(call_date) BETWEEN %s AND %s
+                    GROUP BY uniqueid
+                ) t7
+                ON t6.uniqueid=t7.uniqueid
+                AND t6.closecallid=t7.max_closecallid
+            ) t2
+
+            LEFT JOIN call_log t1
+                ON t1.uniqueid=t2.uniqueid
+
+            LEFT JOIN vicidial_agent_log t3
+                ON t1.uniqueid=t3.uniqueid
+
+            LEFT JOIN (
+                SELECT
+                    uniqueid,
+                    SUM(parked_sec) p
+                FROM park_log
+                WHERE STATUS='GRABBED'
+                AND DATE(parked_time) BETWEEN %s AND %s
+                GROUP BY uniqueid
+            ) t6
+                ON t2.uniqueid=t6.uniqueid
+
+            WHERE DATE(t2.call_date) BETWEEN %s AND %s
+            AND t2.campaign_id='Neemans_IB'
+            AND t2.term_reason!='AFTERHOURS'
+            AND t2.lead_id IS NOT NULL
+            """
+
+            cursor.execute(
+                query,
+                (
+                    start_date,
+                    end_date,
+                    start_date,
+                    end_date,
+                    start_date,
+                    end_date
+                )
+            )
+
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        return {
+            "data": rows,
+            "total": len(rows)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/api/neemans-apr/export")
+def export_neemans_apr(
+    start_date: str,
+    end_date: str,
+    payload=Depends(require_roles(["admin", "neemans"]))
+):
+    try:
+        conn = get_dynamic_connection(5)
+
+        with conn.cursor() as cursor:
+            query = """
+            SELECT
+                t2.uniqueid,
+                DATE(t2.call_date) AS CallDate,
+                FROM_UNIXTIME(t2.start_epoch) AS StartTime,
+                REPLACE(FROM_UNIXTIME(t2.start_epoch+queue_seconds),'.00','') AS CallTime,
+                SEC_TO_TIME(t2.length_in_sec-queue_seconds) AS CallDuration1,
+                t2.user AS Agent,
+                t2.campaign_id,
+                t1.caller_code AS PhoneNumber,
+                t2.status,
+                t2.term_reason,
+                SEC_TO_TIME(t2.length_in_sec) AS CallDuration,
+                SEC_TO_TIME(queue_seconds) AS Queuetime,
+                SEC_TO_TIME(IFNULL(t6.p,0)) AS ParkedTime,
+                t3.dispo_sec,
+                IF(
+                    t3.dispo_sec IS NULL,
+                    SEC_TO_TIME(0),
+                    IF(
+                        t3.sub_status='LOGIN'
+                        OR t3.sub_status='Feed'
+                        OR t3.talk_sec=t3.dispo_sec
+                        OR t3.talk_sec=0,
+                        SEC_TO_TIME(1),
+                        IF(
+                            t3.dispo_sec>100,
+                            SEC_TO_TIME(
+                                t3.dispo_sec-(t3.dispo_sec/100)*100
+                            ),
+                            SEC_TO_TIME(t3.dispo_sec)
+                        )
+                    )
+                ) AS WrapTime,
+                IF(queue_seconds<=30,1,0) AS Call20,
+                FROM_UNIXTIME(t2.end_epoch) AS Endtime
+
+            FROM (
+                SELECT t6.*
+                FROM vicidial_closer_log t6
+                JOIN (
+                    SELECT
+                        uniqueid,
+                        MAX(closecallid) AS max_closecallid
+                    FROM vicidial_closer_log
+                    WHERE campaign_id IN ('Neemans_IB')
+                    AND DATE(call_date) BETWEEN %s AND %s
+                    GROUP BY uniqueid
+                ) t7
+                ON t6.uniqueid=t7.uniqueid
+                AND t6.closecallid=t7.max_closecallid
+            ) t2
+
+            LEFT JOIN call_log t1
+                ON t1.uniqueid=t2.uniqueid
+
+            LEFT JOIN vicidial_agent_log t3
+                ON t1.uniqueid=t3.uniqueid
+
+            LEFT JOIN (
+                SELECT
+                    uniqueid,
+                    SUM(parked_sec) p
+                FROM park_log
+                WHERE STATUS='GRABBED'
+                AND DATE(parked_time) BETWEEN %s AND %s
+                GROUP BY uniqueid
+            ) t6
+                ON t2.uniqueid=t6.uniqueid
+
+            WHERE DATE(t2.call_date) BETWEEN %s AND %s
+            AND t2.campaign_id='Neemans_IB'
+            AND t2.term_reason!='AFTERHOURS'
+            AND t2.lead_id IS NOT NULL
+            """
+
+            cursor.execute(
+                query,
+                (
+                    start_date,
+                    end_date,
+                    start_date,
+                    end_date,
+                    start_date,
+                    end_date
+                )
+            )
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        df = pd.DataFrame(rows)
+
+        output = BytesIO()
+
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(
+                writer,
+                index=False,
+                sheet_name="Neemans_APR"
+            )
+
+        output.seek(0)
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition":
+                f"attachment; filename=Neemans_APR_{start_date}_{end_date}.xlsx"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/api/neemans-cdr")
+def neemans_cdr(
+    start_date: str,
+    end_date: str,
+    payload=Depends(require_roles(["admin", "neemans"]))
+):
+    try:
+        conn = get_dynamic_connection(5)
+
+        with conn.cursor() as cursor:
+            query = """
+            SELECT
+                t2.uniqueid,
+                CONCAT(
+                    SUBSTRING_INDEX(t2.uniqueid,'.',1),
+                    '.',
+                    SUBSTRING_INDEX(t2.uniqueid,'.',-1)+1
+                ) AS Nuniqueid,
+
+                t2.lead_id,
+                t2.user AS Agent,
+                RIGHT(t2.phone_number,10) AS PhoneNumber,
+
+                DATE(t2.call_date) AS CallDate,
+                FROM_UNIXTIME(t2.start_epoch) AS StartTime,
+
+                IF(
+                    FROM_UNIXTIME(t2.end_epoch) IS NULL,
+                    FROM_UNIXTIME(t3.dispo_epoch),
+                    FROM_UNIXTIME(t2.end_epoch)
+                ) AS EndTime,
+
+                t2.length_in_sec AS LengthInSec,
+                SEC_TO_TIME(t2.length_in_sec) AS LengthInMin,
+
+                t2.length_in_sec AS CallDuration,
+
+                t2.status AS CallStatus,
+
+                t3.pause_sec,
+                t3.wait_sec,
+                t3.talk_sec,
+                t3.dead_sec,
+                t3.dispo_sec AS DispoSec,
+
+                t2.campaign_id,
+                t2.comments,
+                t2.term_reason
+
+            FROM vicidial_log t2
+
+            LEFT JOIN vicidial_agent_log t3
+                ON t2.uniqueid=t3.uniqueid
+                AND t2.lead_id=t3.lead_id
+
+            WHERE DATE(t2.call_date)
+            BETWEEN %s AND %s
+
+            AND t2.lead_id IS NOT NULL
+
+            AND t2.campaign_id IN (
+                'NeemansC',
+                'Neem_Out'
+            )
+            """
+
+            cursor.execute(
+                query,
+                (
+                    start_date,
+                    end_date
+                )
+            )
+
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        return {
+            "data": rows,
+            "total": len(rows)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+@app.get("/api/neemans-cdr/export")
+def export_neemans_cdr(
+    start_date: str,
+    end_date: str,
+    payload=Depends(require_roles(["admin", "neemans"]))
+):
+    try:
+        conn = get_dynamic_connection(5)
+
+        with conn.cursor() as cursor:
+            query = """
+            SELECT
+                t2.uniqueid,
+                CONCAT(
+                    SUBSTRING_INDEX(t2.uniqueid,'.',1),
+                    '.',
+                    SUBSTRING_INDEX(t2.uniqueid,'.',-1)+1
+                ) AS Nuniqueid,
+
+                t2.lead_id,
+                t2.user AS Agent,
+                RIGHT(t2.phone_number,10) AS PhoneNumber,
+
+                DATE(t2.call_date) AS CallDate,
+                FROM_UNIXTIME(t2.start_epoch) AS StartTime,
+
+                IF(
+                    FROM_UNIXTIME(t2.end_epoch) IS NULL,
+                    FROM_UNIXTIME(t3.dispo_epoch),
+                    FROM_UNIXTIME(t2.end_epoch)
+                ) AS EndTime,
+
+                t2.length_in_sec AS LengthInSec,
+                SEC_TO_TIME(t2.length_in_sec) AS LengthInMin,
+
+                t2.length_in_sec AS CallDuration,
+
+                t2.status AS CallStatus,
+
+                t3.pause_sec,
+                t3.wait_sec,
+                t3.talk_sec,
+                t3.dead_sec,
+                t3.dispo_sec AS DispoSec,
+
+                t2.campaign_id,
+                t2.comments,
+                t2.term_reason
+
+            FROM vicidial_log t2
+
+            LEFT JOIN vicidial_agent_log t3
+                ON t2.uniqueid=t3.uniqueid
+                AND t2.lead_id=t3.lead_id
+
+            WHERE DATE(t2.call_date)
+            BETWEEN %s AND %s
+
+            AND t2.lead_id IS NOT NULL
+
+            AND t2.campaign_id IN (
+                'NeemansC',
+                'Neem_Out'
+            )
+            """
+
+            cursor.execute(query, (start_date, end_date))
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        df = pd.DataFrame(rows)
+
+        output = BytesIO()
+
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(
+                writer,
+                index=False,
+                sheet_name="Neemans_CDR"
+            )
+
+        output.seek(0)
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition":
+                f"attachment; filename=Neemans_CDR_{start_date}_{end_date}.xlsx"
             }
         )
 

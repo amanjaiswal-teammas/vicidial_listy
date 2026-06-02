@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import NeemansAPR from "../components/NeemansAPR";
 import NeemansCDR from "../components/NeemansCDR";
+import NeemansAgent from "../components/NeemansAgent";
 
 function DBCredentials({ token }) {
   const [data, setData] = useState([]);
@@ -570,6 +571,32 @@ export default function Dashboard({ username, onLogout }) {
 
           {(role === "admin" || role === "neemans") && (
           <>
+
+              <a
+                  href="#"
+                  className={`nav-item ${activeTab === "neemans-agent" ? "active" : ""}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setActiveTab("neemans-agent");
+                  }}
+              >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+
+                  Neemans Agent
+              </a>
+
               <a
                   href="#"
                   className={`nav-item ${activeTab === "neemans-apr" ? "active" : ""}`}
@@ -803,6 +830,10 @@ export default function Dashboard({ username, onLogout }) {
 
           {activeTab === "dynamic" && (
               <DynamicReport token={token} onLogout={onLogout} />
+          )}
+
+          {activeTab === "neemans-agent" && (
+                <NeemansAgent token={token} />
           )}
 
           {activeTab === "neemans-apr" && (

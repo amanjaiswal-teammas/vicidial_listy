@@ -10,6 +10,8 @@ from fastapi.responses import StreamingResponse
 from datetime import datetime
 import jwt
 import os
+import requests
+from requests.auth import HTTPBasicAuth
 
 app = FastAPI()
 
@@ -976,6 +978,83 @@ def export_neemans_cdr(
             headers={
                 "Content-Disposition":
                 f"attachment; filename=Neemans_CDR_{start_date}_{end_date}.xlsx"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/api/neemans-agent/export")
+def export_neemans_agent_report(
+    date: str,
+    payload=Depends(require_roles(["admin", "neemans"]))
+):
+    try:
+
+        report_url = (
+            f"http://192.168.11.249/vicidial/AST_agent_time_detail.php"
+            f"?query_date={date}"
+            f"&end_date={date}"
+            f"&query_tms=00:00:00"
+            f"&query_tme=23:59:59"
+            f"&group[]=120001"
+            f"&group[]=AW"
+            f"&group[]=Cart2"
+            f"&group[]=Chat"
+            f"&group[]=Dalmia"
+            f"&group[]=DS_test"
+            f"&group[]=Email"
+            f"&group[]=HR"
+            f"&group[]=Neem_Out"
+            f"&group[]=Neemans"
+            f"&group[]=NeemansC"
+            f"&group[]=Qadri_Ch"
+            f"&group[]=Qadri_In"
+            f"&group[]=Qadri_RE"
+            f"&group[]=Reginald"
+            f"&group[]=SocialM"
+            f"&group[]=test"
+            f"&group[]=testing"
+            f"&group[]=Viega_IN"
+            f"&group[]=VST_S1"
+            f"&group[]=VST_S2"
+            f"&group[]=VST_S3"
+            f"&group[]=VST_S4"
+            f"&group[]=Vst_Surv"
+            f"&group[]=VSTOUT"
+            f"&group[]=weryze_C"
+            f"&group[]=weryze_F"
+            f"&group[]=weryze_L"
+            f"&group[]=weryze_O"
+            f"&user_group[]=Neemans"
+            f"&shift=ALL"
+            f"&show_parks="
+            f"&time_in_sec="
+            f"&search_archived_data="
+            f"&report_display_type=TEXT"
+            f"&DB="
+            f"&stage=NAME"
+            f"&file_download=1"
+        )
+
+        response = requests.get(report_url, auth=HTTPBasicAuth("6666", "vicidialnow"), timeout=300)
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to download report. Status code: {response.status_code}"
+            )
+
+        csv_data = BytesIO(response.content)
+
+        return StreamingResponse(
+            csv_data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition":
+                f"attachment; filename=Neemans_APR_{date}.csv"
             }
         )
 

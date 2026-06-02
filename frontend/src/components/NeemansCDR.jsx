@@ -4,8 +4,10 @@ export default function NeemansCDR({ token }) {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const [startDate,setStartDate] = useState(today);
-  const [endDate,setEndDate] = useState(today);
+//   const [startDate,setStartDate] = useState(today);
+//   const [endDate,setEndDate] = useState(today);
+
+  const [date, setDate] = useState(today);
 
   const [rows,setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,7 +18,7 @@ export default function NeemansCDR({ token }) {
 
     try {
         const res = await fetch(
-          `http://localhost:8000/api/neemans-cdr?start_date=${startDate}&end_date=${endDate}`,
+          `http://localhost:8000/api/neemans-cdr?start_date=${date}&end_date=${date}`,
           {
             headers:{
               Authorization:`Bearer ${token}`
@@ -38,7 +40,7 @@ export default function NeemansCDR({ token }) {
 
     try {
         const res = await fetch(
-          `http://localhost:8000/api/neemans-cdr/export?start_date=${startDate}&end_date=${endDate}`,
+          `http://localhost:8000/api/neemans-cdr/export?start_date=${date}&end_date=${date}`,
           {
             headers:{
               Authorization:`Bearer ${token}`
@@ -53,7 +55,7 @@ export default function NeemansCDR({ token }) {
         const a = document.createElement("a");
 
         a.href = url;
-        a.download = `Neemans_CDR_${startDate}_${endDate}.xlsx`;
+        a.download = `Neemans_CDR_${date}.xlsx`;
 
         a.click();
 
@@ -73,14 +75,8 @@ export default function NeemansCDR({ token }) {
 
         <input
           type="date"
-          value={startDate}
-          onChange={(e)=>setStartDate(e.target.value)}
-        />
-
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e)=>setEndDate(e.target.value)}
+          value={date}
+          onChange={(e)=>setDate(e.target.value)}
         />
 
         <button

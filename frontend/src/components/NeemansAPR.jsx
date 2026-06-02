@@ -3,8 +3,10 @@ import { useState } from "react";
 export default function NeemansAPR({ token }) {
   const today = new Date().toISOString().split("T")[0];
 
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+//   const [startDate, setStartDate] = useState(today);
+//   const [endDate, setEndDate] = useState(today);
+
+  const [date, setDate] = useState(today);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -15,7 +17,7 @@ export default function NeemansAPR({ token }) {
 
     try {
       const res = await fetch(
-        `http://localhost:8000/api/neemans-apr?start_date=${startDate}&end_date=${endDate}`,
+        `http://localhost:8000/api/neemans-apr?start_date=${date}&end_date=${date}`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -37,7 +39,7 @@ export default function NeemansAPR({ token }) {
 
     try {
       const res = await fetch(
-        `http://localhost:8000/api/neemans-apr/export?start_date=${startDate}&end_date=${endDate}`,
+        `http://localhost:8000/api/neemans-apr/export?start_date=${date}&end_date=${date}`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -52,7 +54,7 @@ export default function NeemansAPR({ token }) {
       const a = document.createElement("a");
 
       a.href = url;
-      a.download = `Neemans_APR_${startDate}_${endDate}.xlsx`;
+      a.download = `Neemans_APR_${date}.xlsx`;
 
       a.click();
 
@@ -71,14 +73,8 @@ export default function NeemansAPR({ token }) {
 
         <input
           type="date"
-          value={startDate}
-          onChange={(e)=>setStartDate(e.target.value)}
-        />
-
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e)=>setEndDate(e.target.value)}
+          value={date}
+          onChange={(e)=>setDate(e.target.value)}
         />
 
         <button

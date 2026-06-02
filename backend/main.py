@@ -12,6 +12,7 @@ import jwt
 import os
 import requests
 from requests.auth import HTTPBasicAuth
+from datetime import timedelta
 
 app = FastAPI()
 
@@ -774,6 +775,26 @@ def export_neemans_apr(
 
         df = pd.DataFrame(rows)
 
+        duration_cols = [
+            "CallDuration1",
+            "CallDuration",
+            "Queuetime",
+            "ParkedTime",
+            "WrapTime"
+        ]
+
+        for col in duration_cols:
+            if col in df.columns:
+                df[col] = df[col].apply(
+                    lambda x: (
+                        f"{int(x.total_seconds() // 3600):02d}:"
+                        f"{int((x.total_seconds() % 3600) // 60):02d}:"
+                        f"{int(x.total_seconds() % 60):02d}"
+                    )
+                    if isinstance(x, timedelta)
+                    else str(x) if x is not None else ""
+                )
+
         output = BytesIO()
 
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -962,6 +983,21 @@ def export_neemans_cdr(
         df = pd.DataFrame(rows)
 
         output = BytesIO()
+
+        def format_duration(value):
+            if isinstance(value, timedelta):
+                total = int(value.total_seconds())
+
+                hours = total // 3600
+                minutes = (total % 3600) // 60
+                seconds = total % 60
+
+                return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+            return value
+
+        if "LengthInMin" in df.columns:
+            df["LengthInMin"] = df["LengthInMin"].apply(format_duration)
 
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(

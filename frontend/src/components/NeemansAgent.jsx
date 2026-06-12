@@ -43,6 +43,42 @@ export default function NeemansAgent({ token }) {
     }
   };
 
+  const handleExport246 = async () => {
+      setExporting(true);
+      setError("");
+
+      try {
+        const res = await fetch(
+          `http://localhost:8000/api/neemans-agent/export-246?date=${date}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        );
+
+        if (!res.ok) {
+          throw new Error("Export failed");
+        }
+
+        const blob = await res.blob();
+
+        const url = window.URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Neemans_Agent_246_${date}.csv`;
+        a.click();
+
+        window.URL.revokeObjectURL(url);
+
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setExporting(false);
+      }
+  };
+
   return (
     <div>
       <header className="dash-header">
@@ -76,6 +112,15 @@ export default function NeemansAgent({ token }) {
         >
           {exporting ? "Exporting..." : "Export CSV"}
         </button>
+
+        <button
+          className="btn-export"
+          onClick={handleExport246}
+          disabled={exporting}
+        >
+          {exporting ? "Exporting..." : "Export CSV 2"}
+        </button>
+
       </div>
     </div>
   );

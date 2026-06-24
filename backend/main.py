@@ -45,6 +45,10 @@ USERS = {
     "neemans": {
         "password": "neemans123",
         "role": "neemans"
+    },
+    "bbb": {
+        "password": "bbb123",
+        "role": "bbb"
     }
 }
 
@@ -1172,6 +1176,136 @@ def export_neemans_agent_report_246(
             headers={
                 "Content-Disposition":
                 f"attachment; filename=Neemans_APR_{date}.csv"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/api/bbb-cdr/export")
+def export_bbb_cdr(
+    start_date: str,
+    end_date: str,
+    payload=Depends(require_roles(["admin", "bbb"]))
+):
+    try:
+        conn = get_dynamic_connection(6)
+
+        with conn.cursor() as cursor:
+            query = """
+            SELECT
+                t2.uniqueid,
+                CONCAT(
+                    SUBSTRING_INDEX(t2.uniqueid,'.',1),
+                    '.',
+                    SUBSTRING_INDEX(t2.uniqueid,'.',-1)+1
+                ) AS Nuniqueid,
+
+                t2.lead_id,
+                t2.user AS Agent,
+                RIGHT(t2.phone_number,10) AS PhoneNumber,
+
+                DATE(t2.call_date) AS CallDate,
+                FROM_UNIXTIME(t2.start_epoch) AS StartTime,
+
+                IF(
+                    FROM_UNIXTIME(t2.end_epoch) IS NULL,
+                    FROM_UNIXTIME(t3.dispo_epoch),
+                    FROM_UNIXTIME(t2.end_epoch)
+                ) AS EndTime,
+
+                t2.length_in_sec AS LengthInSec,
+                SEC_TO_TIME(t2.length_in_sec) AS LengthInMin,
+                t2.length_in_sec AS CallDuration,
+
+                t2.status AS CallStatus,
+
+                t3.pause_sec AS PauseSec,
+                t3.wait_sec AS WaitSec,
+                t3.talk_sec,
+                t3.dead_sec,
+                t3.dispo_sec AS DispoSec,
+
+                t2.campaign_id,
+                t2.comments,
+                t2.term_reason,
+
+                rl.location AS RecordingLocation
+
+            FROM vicidial_log t2
+
+            LEFT JOIN vicidial_agent_log t3
+                ON t2.uniqueid = t3.uniqueid
+                AND t2.lead_id = t3.lead_id
+
+            LEFT JOIN recording_log rl
+                ON t2.uniqueid = rl.vicidial_id
+
+            WHERE DATE(t2.call_date)
+            BETWEEN %s AND %s
+
+            AND t2.lead_id IS NOT NULL
+
+            AND t2.campaign_id IN (
+                'Abandon',
+                'Email',
+                'Insta',
+                'RTO',
+                'Website',
+                'Tamil',
+                'Telugu',
+                'Kannada',
+                'Kerala',
+                'TTERM',
+                'Premium',
+                'RepeatAP',
+                'RepeatTN',
+                'RepeatPI',
+                'MoEmail'
+            )
+            """
+
+            cursor.execute(query, (start_date, end_date))
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        df = pd.DataFrame(rows)
+
+        output = BytesIO()
+
+        def format_duration(value):
+            if isinstance(value, timedelta):
+                total = int(value.total_seconds())
+
+                hours = total // 3600
+                minutes = (total % 3600) // 60
+                seconds = total % 60
+
+                return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+            return value
+
+        if "LengthInMin" in df.columns:
+            df["LengthInMin"] = df["LengthInMin"].apply(format_duration)
+
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(
+                writer,
+                index=False,
+                sheet_name="BBB_CDR"
+            )
+
+        output.seek(0)
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition":
+                f"attachment; filename=BBB_CDR_{start_date}_{end_date}.xlsx"
             }
         )
 

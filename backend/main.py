@@ -13,6 +13,7 @@ import os
 import requests
 from requests.auth import HTTPBasicAuth
 from datetime import timedelta
+from fastapi import Request
 
 app = FastAPI()
 
@@ -1186,6 +1187,7 @@ def export_neemans_agent_report_246(
 
 @app.get("/api/bbb-cdr/export")
 def export_bbb_cdr(
+    request: Request,
     start_date: str,
     end_date: str,
     payload=Depends(require_roles(["admin", "bbb"]))
@@ -1291,6 +1293,19 @@ def export_bbb_cdr(
         if "LengthInMin" in df.columns:
             df["LengthInMin"] = df["LengthInMin"].apply(format_duration)
 
+        PUBLIC_HOST = str(request.base_url).rstrip("/")
+
+        def build_recording_url(location):
+            if not location:
+                return ""
+
+            filename = location.rsplit("/", 1)[-1]
+
+            return f"{PUBLIC_HOST}/api/recording/{filename}"
+
+        if "RecordingLocation" in df.columns:
+            df["RecordingLocation"] = df["RecordingLocation"].apply(build_recording_url)
+
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(
                 writer,
@@ -1310,4 +1325,30 @@ def export_bbb_cdr(
         )
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+@app.get("/api/recording/{filename}")
+def download_recording(
+    filename: str
+):
+    internal_url = f"http://192.168.10.25/RECORDINGS/MP3/{filename}"
+
+    try:
+        response = requests.get(internal_url, stream=True, timeout=30)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Recording not found")
+
+        return StreamingResponse(
+            response.iter_content(chunk_size=8192),
+            media_type=response.headers.get("Content-Type", "audio/mpeg"),
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            },
+        )
+
+    except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=str(e))

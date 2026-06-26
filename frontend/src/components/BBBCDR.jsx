@@ -31,7 +31,7 @@ export default function BBBCDR({ token }) {
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = `BBB_CDR_${date}.xlsx`;
+      a.download = `Reginald_CDR_${date}.xlsx`;
 
       document.body.appendChild(a);
       a.click();
@@ -47,7 +47,7 @@ export default function BBBCDR({ token }) {
 
   return (
     <>
-      <h2>BBB CDR Export</h2>
+      <h2>Reginald CDR Export</h2>
 
       <div className="filter-bar">
         <input

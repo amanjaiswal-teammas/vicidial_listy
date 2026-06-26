@@ -675,7 +675,7 @@ export default function Dashboard({ username, onLogout }) {
                       <path d="M8 16h5" />
                     </svg>
 
-                    BBB CDR
+                    Reginald CDR
                 </a>
           </>
           )}

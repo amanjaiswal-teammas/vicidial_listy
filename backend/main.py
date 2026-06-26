@@ -47,8 +47,8 @@ USERS = {
         "password": "neemans123",
         "role": "neemans"
     },
-    "bbb": {
-        "password": "bbb123",
+    "reginald": {
+        "password": "reginald123",
         "role": "bbb"
     }
 }
@@ -1310,7 +1310,7 @@ def export_bbb_cdr(
             df.to_excel(
                 writer,
                 index=False,
-                sheet_name="BBB_CDR"
+                sheet_name="Reginald_CDR"
             )
 
         output.seek(0)
@@ -1320,7 +1320,7 @@ def export_bbb_cdr(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
                 "Content-Disposition":
-                f"attachment; filename=BBB_CDR_{start_date}_{end_date}.xlsx"
+                f"attachment; filename=Reginald_CDR_{start_date}_{end_date}.xlsx"
             }
         )
 

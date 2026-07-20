@@ -1,0 +1,147 @@
+.cdr-card {
+    margin-top: 20px;
+    background: #161d2d;
+    border: 1px solid #2d3652;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.cdr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.cdr-header h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.cdr-header span {
+    color: #9ca3af;
+    font-size: 14px;
+}
+
+.cdr-table-wrapper {
+    overflow: auto;
+    max-height: 600px;
+    border-radius: 10px;
+    border: 1px solid #2d3652;
+}
+
+.cdr-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+}
+
+.cdr-table thead th {
+    position: sticky;
+    top: 0;
+    background: #2563eb;
+    color: #fff;
+    padding: 14px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 10;
+}
+
+.cdr-table tbody tr {
+    background: #1b2336;
+    transition: .2s;
+}
+
+.cdr-table tbody tr:nth-child(even) {
+    background: #202940;
+}
+
+.cdr-table tbody tr:hover {
+    background: #2b3654;
+}
+
+.cdr-table td {
+    padding: 12px 14px;
+    color: #f3f4f6;
+    border-bottom: 1px solid #313b57;
+    white-space: nowrap;
+    font-size: 14px;
+}
+
+.cdr-table td:first-child {
+    font-weight: 600;
+}
+
+.cdr-table td audio {
+    width: 220px;
+    height: 34px;
+}
+
+.cdr-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 18px;
+}
+
+.cdr-pagination span {
+    color: #d1d5db;
+    font-weight: 500;
+}
+
+.cdr-pagination button {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
+    cursor: pointer;
+    transition: .2s;
+}
+
+.cdr-pagination button:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.cdr-pagination button:disabled {
+    background: #4b5563;
+    cursor: not-allowed;
+}
+
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.filter-bar input[type="date"] {
+    background: #161d2d;
+    border: 1px solid #2d3652;
+    color: #fff;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+.filter-bar button {
+    background: #2563eb;
+    border: none;
+    color: #fff;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: .2s;
+}
+
+.filter-bar button:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.filter-bar button:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}

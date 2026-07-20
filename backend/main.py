@@ -1265,7 +1265,9 @@ def export_bbb_cdr(
                 'RepeatAP',
                 'RepeatTN',
                 'RepeatPI',
-                'MoEmail'
+                'MoEmail',
+                'NDRMO',
+                'NDRRM'
             )
             """
 
@@ -1351,4 +1353,181 @@ def download_recording(
         )
 
     except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+import math
+
+@app.get("/api/bbb-cdr")
+def get_bbb_cdr(
+    request: Request,
+    start_date: str,
+    end_date: str,
+    page: int = 1,
+    limit: int = 100,
+    payload=Depends(require_roles(["admin", "bbb"]))
+):
+    try:
+        conn = get_dynamic_connection(6)
+
+        offset = (page - 1) * limit
+
+        with conn.cursor() as cursor:
+
+            # Total Records
+            count_query = """
+            SELECT COUNT(*) AS total
+            FROM vicidial_log t2
+            WHERE DATE(t2.call_date) BETWEEN %s AND %s
+              AND t2.lead_id IS NOT NULL
+              AND t2.user <> 'VDAD'
+              AND t2.campaign_id IN (
+                    'Abandon',
+                    'Email',
+                    'Insta',
+                    'RTO',
+                    'Website',
+                    'Tamil',
+                    'Telugu',
+                    'Kannada',
+                    'Kerala',
+                    'TTERM',
+                    'Premium',
+                    'RepeatAP',
+                    'RepeatTN',
+                    'RepeatPI',
+                    'MoEmail',
+                    'NDRMO',
+                    'NDRRM'
+              )
+            """
+
+            cursor.execute(count_query, (start_date, end_date))
+            total = cursor.fetchone()["total"]
+
+            query = """
+            SELECT
+                t2.uniqueid,
+
+                CONCAT(
+                    SUBSTRING_INDEX(t2.uniqueid,'.',1),
+                    '.',
+                    SUBSTRING_INDEX(t2.uniqueid,'.',-1)+1
+                ) AS Nuniqueid,
+
+                t2.lead_id,
+                t2.user AS Agent,
+                RIGHT(t2.phone_number,10) AS PhoneNumber,
+
+                DATE(t2.call_date) AS CallDate,
+                FROM_UNIXTIME(t2.start_epoch) AS StartTime,
+
+                IF(
+                    FROM_UNIXTIME(t2.end_epoch) IS NULL,
+                    FROM_UNIXTIME(t3.dispo_epoch),
+                    FROM_UNIXTIME(t2.end_epoch)
+                ) AS EndTime,
+
+                t2.length_in_sec AS LengthInSec,
+                SEC_TO_TIME(t2.length_in_sec) AS LengthInMin,
+                t2.length_in_sec AS CallDuration,
+
+                t2.status AS CallStatus,
+
+                t3.pause_sec AS PauseSec,
+                t3.wait_sec AS WaitSec,
+                t3.talk_sec,
+                t3.dead_sec,
+                t3.dispo_sec AS DispoSec,
+
+                t2.campaign_id,
+                t2.comments,
+                t2.term_reason,
+
+                rl.location AS RecordingLocation
+
+            FROM vicidial_log t2
+
+            LEFT JOIN vicidial_agent_log t3
+                ON t2.uniqueid = t3.uniqueid
+               AND t2.lead_id = t3.lead_id
+
+            LEFT JOIN recording_log rl
+                ON t2.uniqueid = rl.vicidial_id
+
+            WHERE DATE(t2.call_date) BETWEEN %s AND %s
+              AND t2.lead_id IS NOT NULL
+              AND t2.user <> 'VDAD'
+              AND t2.campaign_id IN (
+                    'Abandon',
+                    'Email',
+                    'Insta',
+                    'RTO',
+                    'Website',
+                    'Tamil',
+                    'Telugu',
+                    'Kannada',
+                    'Kerala',
+                    'TTERM',
+                    'Premium',
+                    'RepeatAP',
+                    'RepeatTN',
+                    'RepeatPI',
+                    'MoEmail',
+                    'NDRMO',
+                    'NDRRM'
+              )
+
+            ORDER BY t2.call_date DESC
+            LIMIT %s OFFSET %s
+            """
+
+            cursor.execute(
+                query,
+                (start_date, end_date, limit, offset)
+            )
+
+            rows = cursor.fetchall()
+
+        conn.close()
+
+        PUBLIC_HOST = str(request.base_url).rstrip("/")
+
+        def format_duration(value):
+            if isinstance(value, timedelta):
+                total = int(value.total_seconds())
+                h = total // 3600
+                m = (total % 3600) // 60
+                s = total % 60
+                return f"{h:02d}:{m:02d}:{s:02d}"
+            return value
+
+        for row in rows:
+
+            if isinstance(row.get("LengthInMin"), timedelta):
+                row["LengthInMin"] = format_duration(row["LengthInMin"])
+
+            location = row.get("RecordingLocation")
+
+            if location:
+                filename = location.rsplit("/", 1)[-1]
+                row["RecordingUrl"] = (
+                    f"{PUBLIC_HOST}/api/recording/{filename}"
+                )
+            else:
+                row["RecordingUrl"] = None
+
+            # Optional: hide internal location
+            row.pop("RecordingLocation", None)
+
+        return {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "total_pages": math.ceil(total / limit),
+            "data": rows
+        }
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

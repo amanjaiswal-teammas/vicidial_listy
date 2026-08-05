@@ -14,6 +14,10 @@ import requests
 from requests.auth import HTTPBasicAuth
 from datetime import timedelta
 from fastapi import Request
+from router.ivr import router as ivr_router
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -24,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(ivr_router)
 
 SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"

@@ -10,11 +10,19 @@ from services.external_gateway import ExternalGateway, GatewayError
 
 UTC = timezone.utc
 
+
 def _parse_timestamp(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError:
+        pass
+    # Shiprocket's own date fields (e.g. delivered_date, and whatever the
+    # EDD field turns out to be) have shown up as "YYYY-MM-DD HH:MM:SS"
+    # rather than ISO-8601 with a "T" — try that shape too.
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -32,13 +40,30 @@ def _shipment_summary(tracking: dict[str, Any]) -> dict[str, Any] | None:
     tracking_data = tracking.get("tracking_data", {})
     tracks = tracking_data.get("shipment_track", []) if isinstance(tracking_data, dict) else []
     first = tracks[0] if tracks and isinstance(tracks[0], dict) else {}
+
+    # NOTE: the API guide's tracking payload example is abridged and doesn't
+    # document an estimated-delivery-date field. Shiprocket's live API has
+    # used different key names across versions (edd, etd,
+    # expected_delivery_date), sometimes on the track entry and sometimes on
+    # tracking_data itself. Trying the common candidates here as a best
+    # effort — VERIFY the actual key against a live response and adjust if
+    # it doesn't match; until then this may just come back None.
+    estimated_delivery = (
+        first.get("edd")
+        or first.get("etd")
+        or first.get("expected_delivery_date")
+        or (tracking_data.get("edd") if isinstance(tracking_data, dict) else None)
+        or (tracking_data.get("expected_delivery_date") if isinstance(tracking_data, dict) else None)
+    )
+
     return {
         "known": tracking_data.get("track_status") == 1,
         "status": first.get("current_status"),
         "courier": first.get("courier_name"),
         "awb": first.get("awb_code"),
         "tracking_url": tracking_data.get("track_url"),
-        "delivery": first.get("delivered_date"),
+        "delivered_date": first.get("delivered_date"),
+        "estimated_delivery": estimated_delivery,
     }
 
 
@@ -54,6 +79,69 @@ def _gateway_failure(error: GatewayError) -> dict[str, Any]:
         "request_id": error.request_id,
     }
 
+
+def _humanize_status(value: str | None) -> str:
+    """Shopify/Shiprocket statuses come back SCREAMING_SNAKE or Title Case
+    ("UNFULFILLED", "In Transit") — lowercase and de-underscore them so they
+    read naturally if ever logged or used for TTS."""
+    if not value:
+        return "being processed"
+    return value.replace("_", " ").strip().lower()
+
+
+# Static .wav playback: both Shopify's displayFulfillmentStatus (a fixed
+# enum) and Shiprocket's current_status (free text - NOT a fixed enum, see
+# the caveat given when this was discussed) get normalized into one of
+# these closed set of canonical keys, each with a pre-recorded audio file
+# per language (sounds/<lang>/status/<key>.wav). Anything that doesn't
+# match a keyword falls back to "status_unknown" and gets logged, so you
+# can extend the table (and record the matching audio) as new values show up.
+#
+# Order matters below: more specific checks (e.g. "rto" containing
+# "delivered" as in "RTO Delivered") must be checked before the broader
+# "delivered" check, or they'd be mis-bucketed.
+_STATUS_AUDIO_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    ("returned", ("rto", "return", "cancel")),
+    ("out_for_delivery", ("out for delivery",)),
+    ("delivered", ("delivered",)),
+    ("in_transit", ("in transit",)),
+    ("picked_up", ("picked up", "pickup generated", "out for pickup")),
+    ("delayed_pickup", ("pickup error", "pickup exception", "pickup rescheduled", "undelivered", "exception")),
+    ("on_hold", ("on hold",)),
+    ("scheduled", ("scheduled",)),
+    ("partially_fulfilled", ("partially fulfilled",)),
+    ("processing", ("in progress", "pending fulfillment")),
+    ("unfulfilled", ("unfulfilled", "open", "restocked")),
+    ("fulfilled", ("fulfilled",)),  # bare Shopify FULFILLED with no live shipment data - must stay after "unfulfilled"
+]
+
+
+def normalize_status_audio_key(raw_status: str | None) -> str:
+    """Map a raw Shopify/Shiprocket status string to one of the canonical
+    pre-recorded audio keys. See sounds/manifest.json for the exact file
+    per key per language."""
+    if not raw_status:
+        return "status_unknown"
+    normalized = raw_status.strip().lower().replace("_", " ")
+    for key, keywords in _STATUS_AUDIO_KEYWORDS:
+        if any(kw in normalized for kw in keywords):
+            return key
+    import logging
+    logging.getLogger(__name__).warning("Unmapped status for audio playback: %r - using status_unknown", raw_status)
+    return "status_unknown"
+
+
+def _edd_epoch(shipment: dict[str, Any] | None) -> int | None:
+    """Raw estimated-delivery-date as a Unix epoch (seconds), for Asterisk's
+    SayUnixTime()/date-speaking apps - NOT a formatted string, since the
+    dialplan speaks it itself via a static prompt + dynamic date, rather
+    than us handing back finished prose. Returns None if EDD isn't present
+    (see the earlier caveat: the API guide doesn't document this field, and
+    it may simply be absent on some/all responses until confirmed)."""
+    if not shipment:
+        return None
+    parsed = _parse_timestamp(shipment.get("estimated_delivery"))
+    return int(parsed.timestamp()) if parsed else None
 
 
 def customer_category(
@@ -109,7 +197,9 @@ async def latest_order_status(gateway: ExternalGateway, caller_number: str) -> d
             "handoff": False,
             "customer_category": category,
             "order_status": None,
+            "status_audio_key": None,
             "delivery": None,
+            "edd_epoch": None,
         }
 
     placed_at = _parse_timestamp(order.get("processedAt") or order.get("createdAt"))
@@ -149,18 +239,20 @@ async def latest_order_status(gateway: ExternalGateway, caller_number: str) -> d
 
     if fulfilled:
         order_status = (shipment or {}).get("status") or fulfillment_status
-        delivery = (shipment or {}).get("delivery")
+        delivery = (shipment or {}).get("estimated_delivery") or (shipment or {}).get("delivered_date")
     else:
         order_status = fulfillment_status
         delivery = None
 
-    return {
+    result = {
         "outcome": outcome,
         "prompt_id": prompt_id,
         "handoff": False,
         "customer_category": category,
         "order_status": order_status,
+        "status_audio_key": normalize_status_audio_key(order_status),
         "delivery": delivery,
+        "edd_epoch": _edd_epoch(shipment),
         "order": {
             "number": order.get("name"),
             "placed_at": placed_at.isoformat() if placed_at else None,
@@ -169,6 +261,4 @@ async def latest_order_status(gateway: ExternalGateway, caller_number: str) -> d
         },
         "shipment": shipment,
     }
-
-
-
+    return result

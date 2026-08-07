@@ -43,14 +43,70 @@ async def get_latest_order_status_dialplan(
     caller_number: str = Query(...),
 ) -> str:
     """Plain-text endpoint for Asterisk CURL().
-    Returns 'prompt_id/handoff/order_status/estimated_delivery_date'.
+    Returns 'prompt_id/handoff/status_audio_key/edd_epoch'.
 
     Dialplan usage:
         Set(API_RESULT=${CURL(http://host/api/v1/ivr/dialplan/orders/latest?caller_number=${CALLERID(num)})})
-        Set(para1=${CUT(API_RESULT,/,1)})   ; prompt file to Playback
+        Set(para1=${CUT(API_RESULT,/,1)})   ; branch id - see table below
         Set(para2=${CUT(API_RESULT,/,2)})   ; "1" -> agent, "0" -> continue
-        Set(para3=${CUT(API_RESULT,/,3)})   ; order status text (TTS or SayAlpha)
-        Set(para4=${CUT(API_RESULT,/,4)})   ; EDD, empty if not shipped/unknown
+        Set(para3=${CUT(API_RESULT,/,3)})   ; status_audio_key - which sounds/<lang>/status/<key>.wav to play
+        Set(para4=${CUT(API_RESULT,/,4)})   ; EDD as a Unix epoch, empty if unknown - feed to SayUnixTime()
+
+    Assumes CHANNEL(language) is already set to "en" or "hi" earlier in the
+    call (language selection menu) - custom sound files below are recorded
+    per-language under sounds/<lang>/..., matching Asterisk's normal
+    language-directory convention, so Playback() picks the right file
+    automatically once CHANNEL(language) is set.
+
+    Static files live under a "custom/" sounds subdir you deploy alongside
+    Asterisk's own sounds - e.g. /var/lib/asterisk/sounds/en/custom/... and
+    /var/lib/asterisk/sounds/hi/custom/... (adjust to your actual layout).
+    The starter set (English + Hindi placeholders, machine-generated - swap
+    for real voice recordings before going live) ships in ivr_sounds.zip;
+    sounds/manifest.json lists the exact script text per file.
+
+    Playback() sequence per branch (para1), inserting
+    custom/status/${para3} wherever [STATUS] appears and SayUnixTime(${para4})
+    wherever [EDD] appears:
+
+      shipped_within_5_days:
+        Playback(custom/segments/your_order_is)
+        Playback(custom/status/${para3})                        ; [STATUS]
+        if ${para4} != "":
+            Playback(custom/segments/expected_delivered_by)
+            SayUnixTime(${para4})                                ; [EDD]
+        else:
+            Playback(custom/segments/on_its_way_fallback)        ; EDD unknown fallback
+
+      not_shipped_within_5_days:
+        Playback(custom/segments/not_shipped_intro)
+        Playback(custom/status/${para3})                        ; [STATUS]
+        Playback(custom/segments/shipped_next_2_3_days)
+
+      shipped_after_5_days:
+        Playback(custom/segments/your_order_is)
+        Playback(custom/status/${para3})                        ; [STATUS]
+        if ${para4} != "":
+            Playback(custom/segments/expected_delivered_by)
+            SayUnixTime(${para4})                                ; [EDD]
+            Playback(custom/segments/running_delay_suffix)
+        else:
+            Playback(custom/segments/on_its_way_fallback)
+
+      not_shipped_after_5_days:
+        Playback(custom/segments/your_order_is)
+        Playback(custom/status/${para3})                        ; [STATUS]
+        Playback(custom/segments/delay_overwhelming_suffix)
+
+      no_recent_order / customer_not_found / agent_handoff:
+        Playback(custom/segments/no_recent_order) or Goto(agent-handoff,s,1)
+
+    CAVEAT: SayUnixTime() speaks the date using Asterisk's own per-language
+    digit/month sound files. Asterisk's officially distributed core sound
+    packs may not include Hindi - verify a Hindi core-sounds package exists
+    for your Asterisk version before relying on this for the "hi" language
+    path. If it doesn't, the EDD would need a different approach (e.g. a
+    small per-call generated date-phrase clip) rather than SayUnixTime().
     """
 
     try:
@@ -67,9 +123,10 @@ async def get_latest_order_status_dialplan(
 
     prompt_id = result.get("prompt_id") or UNKNOWN_STATUS
     handoff = "1" if result.get("handoff") else "0"
-    order_status = result.get("order_status") or ""
-    delivery = result.get("delivery") or ""
-    return f"{prompt_id}/{handoff}/{order_status}/{delivery}"
+    status_audio_key = result.get("status_audio_key") or ""
+    edd_epoch = result.get("edd_epoch")
+    edd_field = str(edd_epoch) if edd_epoch is not None else ""
+    return f"{prompt_id}/{handoff}/{status_audio_key}/{edd_field}"
 
 
 @router.get("/dialplan/customers/category", response_class=PlainTextResponse)

@@ -52,21 +52,61 @@ class ExternalGateway:
             raise GatewayError(400, "Caller number is not a valid E.164 phone number")
         return await self._request("GET", f"/customers/phone/{quote(normalised, safe='+')}")
 
+    async def order_by_id(self, order_id: str) -> dict[str, Any]:
+        """GET /orders/:orderId — a single order with totals, customer, line items."""
+        return await self._request("GET", f"/orders/{quote(order_id, safe='')}")
+
+    async def cancel_order(
+        self,
+        order_id: str,
+        *,
+        reason: str = "OTHER",
+        refund: bool = True,
+        restock: bool = True,
+        notify_customer: bool = True,
+        staff_note: str | None = None,
+    ) -> dict[str, Any]:
+        """POST /orders/:orderId/cancel — returns the async Shopify Job {id, done}.
+
+        Acceptance here means the cancellation was queued, not that it has
+        completed; callers that need certainty should poll order_by_id and
+        check cancelledAt / displayFinancialStatus.
+        """
+        valid_reasons = {"CUSTOMER", "DECLINED", "FRAUD", "INVENTORY", "OTHER", "STAFF"}
+        if reason not in valid_reasons:
+            raise ValueError(f"reason must be one of {sorted(valid_reasons)}")
+        body: dict[str, Any] = {
+            "reason": reason,
+            "refund": refund,
+            "restock": restock,
+            "notifyCustomer": notify_customer,
+        }
+        if staff_note:
+            body["staffNote"] = staff_note[:255]
+        return await self._request("POST", f"/orders/{quote(order_id, safe='')}/cancel", body=body)
+
     async def tracking_by_order(self, order_reference: str) -> dict[str, Any]:
         return await self._request("GET", f"/tracking/order/{quote(order_reference, safe='')}")
 
-    async def _request(self, method: str, path: str) -> dict[str, Any]:
-        return await asyncio.to_thread(self._request_sync, method, path)
+    async def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await asyncio.to_thread(self._request_sync, method, path, body)
 
-    def _request_sync(self, method: str, path: str) -> dict[str, Any]:
+    def _request_sync(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"Bearer {self.settings.token}",
+            "X-Shop-Domain": self.settings.shop_domain,
+            "Accept": "application/json",
+        }
+        data: bytes | None = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
         request = Request(
             f"{self.settings.base_url}{path}",
             method=method,
-            headers={
-                "Authorization": f"Bearer {self.settings.token}",
-                "X-Shop-Domain": self.settings.shop_domain,
-                "Accept": "application/json",
-            },
+            headers=headers,
+            data=data,
         )
         try:
             with urlopen(request, timeout=self.settings.timeout_seconds) as response:  # nosec B310 - controlled base URL
@@ -79,19 +119,19 @@ class ExternalGateway:
 
         if not payload.get("success"):
             raise GatewayError(502, payload.get("message", "External API returned an unsuccessful response"), payload.get("requestId"))
-        data = payload.get("data")
+        data_out = payload.get("data")
         # Some endpoints (observed: tracking/order) wrap a single object in a
         # one-element array instead of returning the object directly. Unwrap it
         # rather than treating it as a shape error.
-        if isinstance(data, list):
-            if len(data) == 1 and isinstance(data[0], dict):
-                data = data[0]
+        if isinstance(data_out, list):
+            if len(data_out) == 1 and isinstance(data_out[0], dict):
+                data_out = data_out[0]
             else:
                 raise GatewayError(502, "External API returned an unexpected list shape for data")
 
-        if not isinstance(data, dict):
+        if not isinstance(data_out, dict):
             raise GatewayError(502, "External API returned an unexpected response")
-        return data
+        return data_out
 
     @staticmethod
     def _read_error_payload(error: HTTPError) -> dict[str, Any]:
